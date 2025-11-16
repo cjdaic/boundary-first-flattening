@@ -1,0 +1,18 @@
+# Build directories
+build/
+build_debug/
+# Useless Deps
+deps/CGAL-6.1
+# Editor and OS things
+.DS_Store
+.vscode
+*.swp
+tags
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
