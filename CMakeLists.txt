@@ -3,15 +3,15 @@ project(bff)
 
 option(BFF_BUILD_CLI  "Build BFF command line" ON)
 option(BFF_BUILD_GUI  "Build BFF GUI"          ON)
-option(BFF_USE_CGAL   "Use CGAL library"       ON)
+#option(BFF_USE_CGAL   "Use CGAL library"       ON)
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(CGAL_USE_BOOST 1)
+#set(CGAL_USE_BOOST 1)
 
 # dependencies
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake" "${CMAKE_CURRENT_SOURCE_DIR}/deps/CGAL-6.1/cmake/Modules")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake") ##"${CMAKE_CURRENT_SOURCE_DIR}/deps/CGAL-6.1/cmake/Modules")
 
 # define a variable for the path to the USD directory
 set(USD_DIR "" CACHE PATH "Path to USD directory")
@@ -24,17 +24,17 @@ endif()
 
 #CGAL-6.1
 
-if(BFF_USE_CGAL)
+#if(BFF_USE_CGAL)
     # detect CGAL from ./deps
-    set(CGAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/CGAL-6.1")
-    find_package(CGAL 6.1 REQUIRED)
-    if(CGAL_FOUND)
-        MESSAGE(STATUS "CGAL found: ${CGAL_DIR}")
-        MESSAGE(STATUS "CGAL libraries: ${CGAL_LIBRARIES}")
-    else()
-        MESSAGE(FATAL_ERROR "CGAL-6.1 not found in ${CGAL_DIR}. Please check the path.")
-    endif()
-endif()
+ #   set(CGAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/CGAL-6.1")
+#    find_package(CGAL 6.1 REQUIRED)
+  #  if(CGAL_FOUND)
+  #      MESSAGE(STATUS "CGAL found: ${CGAL_DIR}")
+  #      MESSAGE(STATUS "CGAL libraries: ${CGAL_LIBRARIES}")
+#    else()
+   #     MESSAGE(FATAL_ERROR "CGAL-6.1 not found in ${CGAL_DIR}. Please check the path.")
+  #  endif()
+#endif()
 
 # suitesparse
 # ------------------------------------------------------------------
@@ -92,9 +92,9 @@ if (BFF_BUILD_GUI)
 	add_subdirectory(deps/glm)
 	
 	#CGAL
-	if(BFF_USE_CGAL)
-        		list(APPEND BFF_VIEWER_INCLUDE_DIRS ${CGAL_INCLUDE_DIRS})
-    	endif()
+	#if(BFF_USE_CGAL)
+     #   		list(APPEND BFF_VIEWER_INCLUDE_DIRS ${CGAL_INCLUDE_DIRS})
+    #	endif()
 	# viewer
 	list(APPEND BFF_VIEWER_INCLUDE_DIRS ${NANOGUI_EXTRA_INCS})
 	list(APPEND BFF_VIEWER_INCLUDE_DIRS "deps/nanogui/include")
@@ -106,7 +106,7 @@ if (BFF_BUILD_GUI)
 	add_executable(bff-viewer ${BFF_VIEWER_SOURCES})
 	target_include_directories(bff-viewer PUBLIC ${BFF_VIEWER_INCLUDE_DIRS})
 	target_link_libraries(bff-viewer bff glm nanogui ${NANOGUI_EXTRA_LIBS})
-	if(BFF_USE_CGAL)
-        		target_link_libraries(bff-viewer CGAL::CGAL)
-    	endif()
+	#if(BFF_USE_CGAL)
+      #  		target_link_libraries(bff-viewer CGAL::CGAL)
+    #	endif()
 endif()

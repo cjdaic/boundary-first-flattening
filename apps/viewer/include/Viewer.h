@@ -14,7 +14,10 @@ enum class PlotType {
 	shaded,
 	normals,
 	quasiConformalError,
-	areaScaling
+	areaScaling,
+	frequencyLayer,
+	speedLayer,
+	powerLayer
 };
 
 enum class BoundaryType {
@@ -61,7 +64,11 @@ public:
 	editBoundary(false),
 	setBoundaryAngles(false),
 	etcherMesh(nullptr),
-	etcherTransform(glm::mat4(1.0f)) {}
+	etcherTransform(glm::mat4(1.0f)),
+	frequencyField(1),
+	speedField(1),
+	powerField(1),
+	processingFieldsDirty(true){}
 
 	std::vector<std::shared_ptr<RenderMesh>> renderMeshes;
 	std::vector<std::shared_ptr<RenderMesh>> splineHandles;
@@ -88,6 +95,10 @@ public:
 	DenseMatrix boundaryAngles;
 
 	glm::mat4 etcherTransform;
+	DenseMatrix frequencyField;
+	DenseMatrix speedField;
+	DenseMatrix powerField;
+	bool processingFieldsDirty;
 };
 
 class Viewer {
@@ -190,7 +201,12 @@ private:
 	static void processPickedElement(int index, int pickedId);
 	static void pick(int index);
 
+	static void computeProcessingFields(ModelState& modelState, Mesh& mesh);
+	static std::pair<double, double> computeFieldRange(const DenseMatrix& field);
+	static glm::vec3 colorFromScalar(double value, const std::pair<double, double>& range);
+	static void setModelMatrix(const glm::mat4& modelMatrix);
 	// display
+	static double textureEnergy(const Vector& uv);
 	static void drawRenderMeshes(const ViewPane& pane, int index);
 	static void drawScene();
 	static void draw();
@@ -260,6 +276,8 @@ private:
 
 	static bool mapIsDirty;
 	static bool cutSurface;
+
+	
 };
 
 template <typename T>
@@ -283,15 +301,15 @@ static std::string floatToString(float value, int precision = 4) {
 }
 
 struct LaserEtcher {
-	Vector position{ 0, 0, 5 };  // init pos
+	Vector position{ 0, 0, 10 };  // init pos
 	// pos
 	Vector rotation{ 0, 0, 0 };  // x,y,z
 	// angle
 	double maxTiltX = M_PI / 6;  // ¡À30¶È
 	double maxTiltY = M_PI / 6;
 	double maxTiltZ = M_PI / 3;  // ¡À60¶È
-	double length = 2.0;       
-	double radius = 0.3;       
+	double length = 0.01;       
+	double radius = 0.01;       
 };
 
 static LaserEtcher etcher;
@@ -300,4 +318,4 @@ static Slider* posYSlider;
 static Slider* posZSlider;
 static Slider* rotXSlider;
 static Slider* rotYSlider;
-static Slider* rotZSlider; 
+static Slider* rotZSlider;

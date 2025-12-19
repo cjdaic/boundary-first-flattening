@@ -5,6 +5,7 @@
 #include "bff/project/ConePlacement.h"
 #include "bff/project/Cutter.h"
 #include "bff/project/Distortion.h"
+#include "bff/project/Bff.h"
 #include "ShadersSource.h"
 #include <iomanip>
 #include <limits>
@@ -14,9 +15,14 @@
 #include "bff/mesh/Types.h"
 #include <vector>
 #include <GL/gl.h>
+#include <cmath>
+
 #define EYE 3.5
 #define MAX_PICKED_ID 16777215
 constexpr float ETCHER_SCALE = 0.05f;
+constexpr double BASE_FREQUENCY = 20000.0; // Hz
+constexpr double BASE_SPEED = 0.6;         // nominal feed rate multiplier
+constexpr double BASE_POWER = 10.0;
 
 GLFWwindow* Viewer::window = NULL;
 Screen* Viewer::gui = new Screen();
@@ -103,10 +109,9 @@ void Viewer::init(const std::string& objPath_)
 	initLights();
 	initModel();
 	initRenderMeshes();
-	//initEtcherMesh();
 	initBFF();
-
-	//updateEtcherMesh();
+	initEtcherMesh();
+	updateEtcherMesh();
 
 	// render and poll events
 	while (!glfwWindowShouldClose(window)) {
@@ -260,7 +265,10 @@ void Viewer::initGui()
 														  "       Shaded       ",
 														  "       Normal       ",
 														  "Conformal Distortion",
-														  "   Area Distortion  "});
+														  "   Area Distortion  ",
+														  " Processing Freq.   ",
+														  " Processing Speed   ",
+													      " Processing Power   " });
 	plotComboBox->setSelectedIndex(static_cast<int>(plotType));
 	plotComboBox->setFixedHeight(25);
 	plotComboBox->setCallback([](int box) {
@@ -279,6 +287,15 @@ void Viewer::initGui()
 				break;
 			case 4:
 				plotType = PlotType::areaScaling;
+				break;
+			case 5:
+				plotType = PlotType::frequencyLayer;
+				break;
+			case 6:
+				plotType = PlotType::speedLayer;
+				break;
+			case 7:
+				plotType = PlotType::powerLayer;
 				break;
 		}
 
@@ -508,6 +525,7 @@ void Viewer::initGui()
 	posXSlider->setValue(etcher.position.x);
 	posXSlider->setCallback([](float value) {
 		etcher.position.x = value;
+		std::cout << "posX:" << value;
 		updateEtcherMesh();
 		});
 
@@ -517,6 +535,7 @@ void Viewer::initGui()
 	posYSlider->setValue(etcher.position.y);
 	posYSlider->setCallback([](float value) {
 		etcher.position.y = value;
+		std::cout << "posY:" << value;
 		updateEtcherMesh();
 		});
 
@@ -526,6 +545,7 @@ void Viewer::initGui()
 	posZSlider->setValue(etcher.position.z);
 	posZSlider->setCallback([](float value) {
 		etcher.position.z = value;
+		std::cout << "posZ:" << value;
 		updateEtcherMesh();
 		});
 
@@ -536,6 +556,7 @@ void Viewer::initGui()
 	rotXSlider->setValue(etcher.rotation.x);
 	rotXSlider->setCallback([](float value) {
 		etcher.rotation.x = value;
+		std::cout << "rotX:" << value;
 		updateEtcherMesh();
 		});
 
@@ -545,6 +566,7 @@ void Viewer::initGui()
 	rotYSlider->setValue(etcher.rotation.y);
 	rotYSlider->setCallback([](float value) {
 		etcher.rotation.y = value;
+		std::cout << "rotY:" << value;
 		updateEtcherMesh();
 		});
 
@@ -554,6 +576,7 @@ void Viewer::initGui()
 	rotZSlider->setValue(etcher.rotation.z);
 	rotZSlider->setCallback([](float value) {
 		etcher.rotation.z = value;
+		std::cout << "rotZ:" << value;
 		updateEtcherMesh();
 		});
 
@@ -571,7 +594,10 @@ void Viewer::initGui()
 												   "    Rings     " });
 	patternComboBox->setSelectedIndex(1);
 	patternComboBox->setFixedHeight(25);
-
+	patternComboBox->setCallback([](int) {
+		colorsNeedUpdate = true;
+		for (auto& ms : modelStates) ms.processingFieldsDirty = true;
+		});
 
 	
 	Widget* patternSizePanel = new Widget(patGenWin);
@@ -597,6 +623,8 @@ void Viewer::initGui()
 	// ---------- 滑条 -> 文本框 ----------
 	patternSizeSlider->setCallback([patternSizeTextBox](float v) {
 		patternSize = v;
+		colorsNeedUpdate = true;
+		for (auto& ms : modelStates) ms.processingFieldsDirty = true;
 		std::ostringstream ss;
 		ss.precision(4);
 		ss << std::fixed << v;
@@ -609,6 +637,8 @@ void Viewer::initGui()
 			float v = std::stof(text);
 			v = clampValue(v, 0.0f, 5.0f);
 			patternSize = v;
+			colorsNeedUpdate = true;
+			for (auto& ms : modelStates) ms.processingFieldsDirty = true;
 			patternSizeSlider->setValue(v);
 
 			std::ostringstream ss;
@@ -829,7 +859,7 @@ void Viewer::initEtcherMesh() {
 		v3, v2, v6,  v3, v6, v7
 	};
 
-	glm::vec3 etcherColor = glm::vec3(1.0f, 0.2f, 0.2f);
+	glm::vec3 etcherColor = glm::vec3(0.1f, 0.5f, 0.2f);
 	std::vector<glm::vec3> colors;
 	colors.reserve(positions.size());
 	for (size_t i = 0; i < positions.size(); ++i) colors.emplace_back(etcherColor);
@@ -919,6 +949,8 @@ void Viewer::updateEtcherMesh() {
 
 	// Trigger redraw
 	colorsNeedUpdate = true;
+
+	glfwPostEmptyEvent();
 }
 void Viewer::initLights()
 {
@@ -1222,7 +1254,34 @@ void Viewer::updatePlotLabel()
 	if (plotType == PlotType::constant || plotType == PlotType::shaded || plotType == PlotType::normals) {
 		plotLabel->setCaption("Plot");
 
-	} else if (!state->surfaceIsClosed || (state->surfaceIsClosed && state->cut) || state->mappedToSphere) {
+	}
+	else if (plotType == PlotType::frequencyLayer || plotType == PlotType::speedLayer || plotType == PlotType::powerLayer) {
+		if (state->bff) {
+			if (state->processingFieldsDirty) computeProcessingFields(*state, *mesh);
+
+			const DenseMatrix* field = &state->frequencyField;
+			std::string prefix = "Freq";
+			if (plotType == PlotType::speedLayer) {
+				field = &state->speedField;
+				prefix = "Speed";
+			}
+			else if (plotType == PlotType::powerLayer) {
+				field = &state->powerField;
+				prefix = "Power";
+			}
+
+			auto range = computeFieldRange(*field);
+			std::stringstream label;
+			label << prefix << " min:" << std::setprecision(3) << range.first
+				<< "  max:" << std::setprecision(3) << range.second;
+			plotLabel->setCaption("Plot     " + label.str());
+		}
+		else {
+			plotLabel->setCaption("Plot");
+		}
+
+	}
+	else if (!state->surfaceIsClosed || (state->surfaceIsClosed && state->cut) || state->mappedToSphere) {
 		if (plotType == PlotType::quasiConformalError) {
 			std::stringstream label;
 			Vector error = Distortion::computeQuasiConformalError(model);
@@ -1271,7 +1330,9 @@ void Viewer::updateUniforms(int index, int width, int height)
 	// view matrix
 	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(view));
 	// 3D view matrix
-	glBufferSubData(GL_UNIFORM_BUFFER, 2*sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(view3D));
+	glBufferSubData(GL_UNIFORM_BUFFER, 2 * sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(view3D));
+	// reset model matrix to identity for the base meshes
+	glBufferSubData(GL_UNIFORM_BUFFER, 3 * sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(glm::mat4(1.0f)));
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 	// set check factor, check size and draw uv sphere is mapped to sphere
@@ -1287,9 +1348,169 @@ void Viewer::updateUniforms(int index, int width, int height)
 	glUniform1i(glGetUniformLocation(modelShader.program, "shade"), plotType != PlotType::normals);
 }
 
+void Viewer::setModelMatrix(const glm::mat4& modelMatrix)
+{
+	glBindBuffer(GL_UNIFORM_BUFFER, transformUbo);
+	glBufferSubData(GL_UNIFORM_BUFFER, 3 * sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(modelMatrix));
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+}
+
+std::pair<double, double> Viewer::computeFieldRange(const DenseMatrix& field)
+{
+	double minVal = std::numeric_limits<double>::infinity();
+	double maxVal = -std::numeric_limits<double>::infinity();
+
+	for (size_t r = 0; r < field.nRows(); ++r) {
+		double v = field(r);
+		minVal = std::min(minVal, v);
+		maxVal = std::max(maxVal, v);
+	}
+
+	if (!std::isfinite(minVal) || !std::isfinite(maxVal)) return { 0.0, 1.0 };
+	if (std::abs(maxVal - minVal) < 1e-12) maxVal = minVal + 1.0;
+	return { minVal, maxVal };
+}
+
+glm::vec3 Viewer::colorFromScalar(double value, const std::pair<double, double>& range)
+{
+	double t = (value - range.first) / (range.second - range.first);
+	t = clampValue(t, 0.0, 1.0);
+
+	auto lerp = [](const glm::vec3& a, const glm::vec3& b, double s) {
+		return (float)(1 - s) * a + (float)s * b;
+		};
+
+	if (t < 0.25) {
+		return lerp(glm::vec3(0.0f, 0.0f, 0.5f), glm::vec3(0.0f, 0.7f, 1.0f), t / 0.25);
+	}
+	else if (t < 0.5) {
+		return lerp(glm::vec3(0.0f, 0.7f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), (t - 0.25) / 0.25);
+	}
+	else if (t < 0.75) {
+		return lerp(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(1.0f, 1.0f, 0.0f), (t - 0.5) / 0.25);
+	}
+	return lerp(glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f), (t - 0.75) / 0.25);
+}
+
+double Viewer::textureEnergy(const Vector& uv)
+	{
+		double scale = std::exp(patternSize);
+		int selected = patternComboBox ? patternComboBox->selectedIndex() : 0;
+
+		auto frac = [](double x) { return x - std::floor(x); };
+		auto smoothStep = [](double edge, double x) { return clampValue((edge - x) / edge, 0.0, 1.0); };
+
+		if (selected == 1) {
+			double fu = frac(uv.x * scale);
+			double fv = frac(uv.y * scale);
+			double edge = std::min(std::min(fu, 1.0 - fu), std::min(fv, 1.0 - fv));
+			return smoothStep(0.08, edge);
+		}
+
+		if (selected == 2) {
+			double cellU = std::floor(uv.x * scale);
+			double cellV = std::floor(uv.y * scale);
+			return std::fmod(cellU + cellV, 2.0) < 1.0 ? 1.0 : 0.25;
+		}
+
+		if (selected == 3) {
+			double cx = std::round(uv.x * scale) / scale;
+			double cy = std::round(uv.y * scale) / scale;
+			double dist = std::sqrt((uv.x - cx) * (uv.x - cx) + (uv.y - cy) * (uv.y - cy));
+			double radius = 0.35 / std::max(1.0, scale);
+			return std::exp(-std::pow(dist / (radius + 1e-6), 2.0));
+		}
+
+		if (selected == 4) {
+			double r = std::sqrt(uv.x * uv.x + uv.y * uv.y);
+			double spacing = std::max(0.1, 0.4 / std::max(1.0, scale));
+			double pos = std::fmod(r / spacing, 1.0);
+			double band = std::min(pos, 1.0 - pos);
+			return smoothStep(0.08, band);
+		}
+
+		double distToCenter = std::sqrt(uv.x * uv.x + uv.y * uv.y);
+		double circleRadius = 0.35 * std::max(1.0, scale);
+		return std::exp(-std::pow(distToCenter / (circleRadius + 1e-6), 2.0));
+	}
+
+	namespace {
+
+		double gaussianCurvatureAt(const ModelState& state, WedgeIter w)
+		{
+			if (!state.bff || !state.bff->data) return 0.0;
+
+			const DenseMatrix& K = state.bff->gaussianCurvature();
+			int idx = state.bff->data->index[w];
+			if (idx >= 0 && static_cast<size_t>(idx) < K.nRows()) return K(idx);
+
+			return 0.0;
+		}
+
+		double geodesicCurvatureAt(const ModelState& state, WedgeIter w)
+		{
+			if (!state.bff || !state.bff->data) return 0.0;
+
+			const DenseMatrix& k = state.bff->geodesicCurvature();
+			int idx = state.bff->data->bIndex[w];
+			if (idx >= 0 && static_cast<size_t>(idx) < k.nRows()) return k(idx);
+
+			return 0.0;
+		}
+
+	} // namespace
+
+	void Viewer::computeProcessingFields(ModelState& modelState, Mesh& mesh)
+	{
+		if (!modelState.bff || !modelState.bff->data) return;
+
+		int totalEntries = modelState.bff->data->N;
+		modelState.frequencyField = DenseMatrix(totalEntries);
+		modelState.speedField = DenseMatrix(totalEntries);
+		modelState.powerField = DenseMatrix(totalEntries);
+
+		for (WedgeIter w = mesh.wedges().begin(); w != mesh.wedges().end(); w++) {
+			int idx = modelState.bff->data->index[w];
+			double curvature = w->vertex()->onBoundary() ? geodesicCurvatureAt(modelState, w)
+				: gaussianCurvatureAt(modelState, w);
+
+			double curvatureScale = clampValue(std::abs(curvature) / M_PI, 0.0, 1.0);
+			const Vector& uv = w->uv;
+			double textureInfluence = textureEnergy(uv);
+
+			// Coupled field: higher curvature and texture energy require higher frequency
+			double coupledFactor = 0.6 * curvatureScale + 0.4 * textureInfluence;
+			double frequency = BASE_FREQUENCY * (1.0 + coupledFactor);
+
+			// Slow down on high curvature while allowing texture energy to compensate locally
+			double speed = BASE_SPEED * (1.0 + 0.25 * textureInfluence) * (1.0 - 0.5 * curvatureScale);
+			speed = std::max(speed, 0.05);
+
+			// Power tracks both curvature (material resistance) and the modulation from frequency
+			double power = BASE_POWER * (0.5 + 0.5 * (frequency / BASE_FREQUENCY)) * (1.0 + 0.4 * curvatureScale);
+
+			modelState.frequencyField(idx) = frequency;
+			modelState.speedField(idx) = speed;
+			modelState.powerField(idx) = power;
+		}
+
+		modelState.processingFieldsDirty = false;
+}
 void Viewer::updateRenderMeshes()
 {
 	for (int i = 0; i < model.size(); i++) {
+		bool processingPlot = plotType == PlotType::frequencyLayer || plotType == PlotType::speedLayer || plotType == PlotType::powerLayer;
+		if (processingPlot && (colorsNeedUpdate || modelStates[i].processingFieldsDirty)) {
+			computeProcessingFields(modelStates[i], model[i]);
+		}
+
+		std::pair<double, double> freqRange, speedRange, powerRange;
+		if (processingPlot) {
+			freqRange = computeFieldRange(modelStates[i].frequencyField);
+			speedRange = computeFieldRange(modelStates[i].speedField);
+			powerRange = computeFieldRange(modelStates[i].powerField);
+		}
+
 		// set uvs for the 1st rendermesh and positions and colors for 2nd rendermesh
 		std::shared_ptr<Buffer> uvs = modelStates[i].renderMeshes[0]->uvs;
 		for (FaceCIter f = model[i].faces.begin(); f != model[i].faces.end(); f++) {
@@ -1331,6 +1552,25 @@ void Viewer::updateRenderMeshes()
 						Vector distortion = Distortion::color(f, i, false);
 						color = glm::vec3(distortion.x, distortion.y, distortion.z);
 					}
+					else if (plotType == PlotType::areaScaling) {
+						Vector distortion = Distortion::color(f, i, false);
+						color = glm::vec3(distortion.x, distortion.y, distortion.z);
+
+					}
+					else if (plotType == PlotType::frequencyLayer && modelStates[i].bff && modelStates[i].bff->data) {
+						double v = modelStates[i].frequencyField(modelStates[i].bff->data->index[w]);
+						color = colorFromScalar(v, freqRange);
+
+					}
+					else if (plotType == PlotType::speedLayer && modelStates[i].bff && modelStates[i].bff->data) {
+						double v = modelStates[i].speedField(modelStates[i].bff->data->index[w]);
+						color = colorFromScalar(v, speedRange);
+
+					}
+			else if (plotType == PlotType::powerLayer && modelStates[i].bff && modelStates[i].bff->data) {
+				double v = modelStates[i].powerField(modelStates[i].bff->data->index[w]);
+				color = colorFromScalar(v, powerRange);
+			}
 
 					for (int k = 0; k < 3; k++) {
 						uvs->buffer[index + j][k] = w->uv[k];
@@ -1594,6 +1834,7 @@ void Viewer::updateSelectedMesh()
 	cameras[1]->reset();
 	updateCameraZoom();
 	updateInstructionText();
+	state->processingFieldsDirty = true;
 	if (loadedModel && !state->etcherMesh) {
 		initEtcherMesh();
 		updateEtcherMesh();
@@ -2523,15 +2764,12 @@ void Viewer::drawRenderMeshes(const ViewPane& pane, int index)
 		// Use flat shader to draw the etcher (matches how handles are drawn)
 		flatShader.use();
 
-		// Set per-object model matrix if the shader expects it.
-		// Note: glm::value_ptr returns column-major data; GL_FALSE means no transpose.
-		GLint modelLoc = glGetUniformLocation(flatShader.program, "model");
-		if (modelLoc != -1) {
-			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(state->etcherTransform));
-		}
-
-		// Ensure camera/UBO uniforms are up-to-date
 		updateUniforms(index, pane.width, pane.height);
+
+		// Upload the etcher transform into the shared transform block
+		setModelMatrix(state->etcherTransform);
+
+		setModelMatrix(glm::mat4(1.0f));
 
 		// Draw the etcher mesh
 		state->etcherMesh->draw(flatShader);

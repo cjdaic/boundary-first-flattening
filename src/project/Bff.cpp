@@ -908,3 +908,10 @@ void BFFData::init()
 }
 
 } // namespace bff
+const bff::DenseMatrix& bff::BFF::gaussianCurvature() const {
+	return data->K; // data是BFF类中指向BFFData的智能指针，K存储高斯曲率
+}
+
+const bff::DenseMatrix& bff::BFF::geodesicCurvature() const {
+	return data->k; // k存储测地曲率
+}

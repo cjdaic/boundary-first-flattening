@@ -56,6 +56,9 @@ public:
 	// normalize curvatures to sum to 2pi
 	void closeCurvatures(DenseMatrix& ktilde) const;
 
+
+	const DenseMatrix& gaussianCurvature() const;
+	const DenseMatrix& geodesicCurvature() const;
 protected:
 	// Copies scale factors u of the uncut surface into a and g that store the interior
 	// and boundary scale factors u (resp.) of the cut surface
