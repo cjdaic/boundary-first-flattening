@@ -9,7 +9,7 @@
 #include <fstream>
 #include <iostream>
 #include <cmath>
-#include <nlohmann/json.hpp>
+#include <sstream>
 
 // Include BFF core headers. Consumers should ensure these headers
 // are available in the include path when compiling this file with
@@ -24,8 +24,6 @@
 #include "bff/project/Bff.h"
 
 namespace laser {
-
-using nlohmann::json;
 
 // Helper function to compute length distortion factor s_L per vertex.
 static std::vector<double> computeLengthDistortion(bff::Mesh& mesh) {
@@ -232,25 +230,29 @@ bool exportLaserFieldAsJson(bff::Bff* project,
                             const std::string& filepath) {
     if (!project) return false;
     bff::Mesh& mesh = project->mesh;
-    json j = json::array();
+    std::ostringstream ss;
+    ss << "[\n";
+    bool first = true;
     for (const auto& vf : fields) {
         int idx = vf.index;
-        if (idx < 0 || static_cast<size_t>(idx) >= mesh.vertices.size()) continue;
+        if (idx < 0 || static_cast<size_t>(idx) >= mesh.vertices.size()) {
+            continue;
+        }
         const bff::Vertex& v = mesh.vertices[idx];
-        json obj;
-        obj["index"] = idx;
-        obj["x"] = v.position.x;
-        obj["y"] = v.position.y;
-        obj["z"] = v.position.z;
-        obj["P"] = vf.P;
-        obj["v"] = vf.v;
-        obj["f"] = vf.f;
-        j.push_back(obj);
+        if (!first) ss << ",\n";
+        ss << "  {\"index\":" << idx
+            << ",\"x\":" << v.position.x
+            << ",\"y\":" << v.position.y
+            << ",\"z\":" << v.position.z
+            << ",\"P\":" << vf.P
+            << ",\"v\":" << vf.v
+            << ",\"f\":" << vf.f
+            << "}";
+        first = false;
     }
-    // write to file
     std::ofstream ofs(filepath);
     if (!ofs) return false;
-    ofs << j.dump(2);
+    ofs << ss.str() << "\n]";
     ofs.close();
     return true;
 }
@@ -338,21 +340,23 @@ void interpolateFieldToPath(bff::Bff* project,
 
 bool exportPathAsJson(const std::vector<PathPoint>& path,
                       const std::string& filepath) {
-    json j = json::array();
-    for (const auto& p : path) {
-        json obj;
-        obj["x"] = p.x;
-        obj["y"] = p.y;
-        obj["z"] = p.z;
-        obj["P"] = p.P;
-        obj["v"] = p.v;
-        obj["f"] = p.f;
-        j.push_back(obj);
-    }
     std::ofstream ofs(filepath);
     if (!ofs) return false;
-    ofs << j.dump(2);
-    ofs.close();
+
+    ofs << "[\n";
+    for (size_t i = 0; i < path.size(); ++i) {
+        const auto& p = path[i];
+        ofs << "  {\"x\":" << p.x
+            << ",\"y\":" << p.y
+            << ",\"z\":" << p.z
+            << ",\"P\":" << p.P
+            << ",\"v\":" << p.v
+            << ",\"f\":" << p.f
+            << "}";
+        if (i + 1 < path.size()) ofs << ",";
+        ofs << "\n";
+    }
+    ofs << "]";
     return true;
 }
 } // namespace laser

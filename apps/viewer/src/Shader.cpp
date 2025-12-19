@@ -68,7 +68,7 @@ GLuint Shader::compileShader(const std::string& code, GLenum type)
 
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
 	if (!success) {
-		glGetProgramInfoLog(program, 512, NULL, infoLog);
+		glGetShaderInfoLog(shader, 512, NULL, infoLog);
 		std::cerr << infoLog << std::endl;
 		shader = 0;
 	}
