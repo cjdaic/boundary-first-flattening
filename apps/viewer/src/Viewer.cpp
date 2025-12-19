@@ -6,6 +6,7 @@
 #include "bff/project/Cutter.h"
 #include "bff/project/Distortion.h"
 #include "bff/project/Bff.h"
+#include "bff/laser/laser_field.h"
 #include "ShadersSource.h"
 #include <iomanip>
 #include <limits>
@@ -20,9 +21,6 @@
 #define EYE 3.5
 #define MAX_PICKED_ID 16777215
 constexpr float ETCHER_SCALE = 0.05f;
-constexpr double BASE_FREQUENCY = 20000.0; // Hz
-constexpr double BASE_SPEED = 0.6;         // nominal feed rate multiplier
-constexpr double BASE_POWER = 10.0;
 
 GLFWwindow* Viewer::window = NULL;
 Screen* Viewer::gui = new Screen();
@@ -1464,34 +1462,56 @@ double Viewer::textureEnergy(const Vector& uv)
 	{
 		if (!modelState.bff || !modelState.bff->data) return;
 
+		laser::LaserParams params;
+		Vector minUV(std::numeric_limits<double>::infinity(),
+			std::numeric_limits<double>::infinity(), 0.0);
+		Vector maxUV(-std::numeric_limits<double>::infinity(),
+			-std::numeric_limits<double>::infinity(), 0.0);
+		bool hasUV = false;
+
+		for (WedgeIter w = mesh.wedges().begin(); w != mesh.wedges().end(); ++w) {
+			const Vector& uv = w->uv;
+			if (std::isfinite(uv.x) && std::isfinite(uv.y)) {
+				minUV.x = std::min(minUV.x, uv.x);
+				minUV.y = std::min(minUV.y, uv.y);
+				maxUV.x = std::max(maxUV.x, uv.x);
+				maxUV.y = std::max(maxUV.y, uv.y);
+				hasUV = true;
+			}
+		}
+
+		if (hasUV) {
+			params.circleCenter = Vector(0.5 * (minUV.x + maxUV.x),
+				0.5 * (minUV.y + maxUV.y), 0.0);
+			double maxExtent = std::max(maxUV.x - minUV.x, maxUV.y - minUV.y);
+			params.circleRadius = std::max(0.05, 0.25 * maxExtent);
+			params.hatchUV = std::max(0.0025, 0.01 * maxExtent);
+		}
+		else {
+			params.circleCenter = Vector(0.0, 0.0, 0.0);
+			params.circleRadius = 0.3;
+		}
+		params.curvatureWeight = 0.35;
+
+		std::vector<laser::VertexField> vertexFields;
+		if (!laser::computeLaserFields(modelState.bff.get(), params, vertexFields)) {
+			return;
+		}
+
 		int totalEntries = modelState.bff->data->N;
 		modelState.frequencyField = DenseMatrix(totalEntries);
 		modelState.speedField = DenseMatrix(totalEntries);
 		modelState.powerField = DenseMatrix(totalEntries);
 
-		for (WedgeIter w = mesh.wedges().begin(); w != mesh.wedges().end(); w++) {
+		for (WedgeIter w = mesh.wedges().begin(); w != mesh.wedges().end(); ++w) {
 			int idx = modelState.bff->data->index[w];
-			double curvature = w->vertex()->onBoundary() ? geodesicCurvatureAt(modelState, w)
-				: gaussianCurvatureAt(modelState, w);
+			int vertexIndex = w->vertex()->index;
+			if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= vertexFields.size()) continue;
 
-			double curvatureScale = clampValue(std::abs(curvature) / M_PI, 0.0, 1.0);
-			const Vector& uv = w->uv;
-			double textureInfluence = textureEnergy(uv);
-
-			// Coupled field: higher curvature and texture energy require higher frequency
-			double coupledFactor = 0.6 * curvatureScale + 0.4 * textureInfluence;
-			double frequency = BASE_FREQUENCY * (1.0 + coupledFactor);
-
-			// Slow down on high curvature while allowing texture energy to compensate locally
-			double speed = BASE_SPEED * (1.0 + 0.25 * textureInfluence) * (1.0 - 0.5 * curvatureScale);
-			speed = std::max(speed, 0.05);
-
-			// Power tracks both curvature (material resistance) and the modulation from frequency
-			double power = BASE_POWER * (0.5 + 0.5 * (frequency / BASE_FREQUENCY)) * (1.0 + 0.4 * curvatureScale);
-
-			modelState.frequencyField(idx) = frequency;
-			modelState.speedField(idx) = speed;
-			modelState.powerField(idx) = power;
+			const laser::VertexField& vf = vertexFields[vertexIndex];
+			modelState.frequencyField(idx) = vf.f;
+			modelState.speedField(idx) = vf.v;
+			modelState.powerField(idx) = vf.P;
 		}
 
 		modelState.processingFieldsDirty = false;

@@ -907,11 +907,12 @@ void BFFData::init()
 	Abb = A.submatrix(iN, N, iN, N);
 }
 
-} // namespace bff
-const bff::DenseMatrix& bff::BFF::gaussianCurvature() const {
-	return data->K; // data是BFF类中指向BFFData的智能指针，K存储高斯曲率
+const DenseMatrix& BFF::gaussianCurvature() const {
+	return data->K;
 }
 
-const bff::DenseMatrix& bff::BFF::geodesicCurvature() const {
-	return data->k; // k存储测地曲率
+const DenseMatrix& BFF::geodesicCurvature() const {
+	return data->k;
 }
+
+} // namespace bff

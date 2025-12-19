@@ -60,7 +60,8 @@ file(GLOB BFF_SOURCES "deps/rectangle-bin-pack/GuillotineBinPack.cpp"
 					  "deps/rectangle-bin-pack/Rect.cpp"
 					  "src/linear-algebra/*.cpp"
 					  "src/mesh/*.cpp"
-					  "src/project/*.cpp")
+					  "src/project/*.cpp"
+					  "src/laser/*.cpp")
 
 # create bff static library
 add_library(bff ${BFF_SOURCES})
